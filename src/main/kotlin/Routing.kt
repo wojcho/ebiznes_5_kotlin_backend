@@ -116,254 +116,322 @@ fun Routing.productRoutes(
     productIdSeq: AtomicInteger,
     baskets: ConcurrentHashMap<Int, ConcurrentHashMap<Int, Int>>,
 ) {
-    // Products CRUD
     route("/products") {
-        get {
-            call.respond(products.values.toList())
-        }
-        post {
-            val req = call.receive<CreateProductRequest>()
-            if (req.name.isBlank() || req.priceCents < 0) {
-                call.respond(HttpStatusCode.BadRequest, "Wrong product data")
-                return@post
-            }
-            val id = productIdSeq.getAndIncrement()
-            val p =
-                Product(
-                    id = id,
-                    name = req.name,
-                    description = req.description ?: "",
-                    priceCents = req.priceCents,
-                    inStock = req.inStock,
-                )
-            products[id] = p
-            call.respond(HttpStatusCode.Created, p)
-        }
+        get { handleListProducts(call, products) }
+        post { handleCreateProduct(call, products, productIdSeq) }
+
         route("/{id}") {
-            get {
-                val id = call.parameters["id"]?.toIntOrNull()
-                if (id == null) {
-                    call.respond(HttpStatusCode.BadRequest)
-                    return@get
-                }
-                val p = products[id]
-                if (p == null) {
-                    call.respond(HttpStatusCode.NotFound)
-                    return@get
-                }
-                call.respond(p)
-            }
-            put {
-                val id = call.parameters["id"]?.toIntOrNull()
-                if (id == null) {
-                    call.respond(HttpStatusCode.BadRequest)
-                    return@put
-                }
-                val existing = products[id]
-                if (existing == null) {
-                    call.respond(HttpStatusCode.NotFound)
-                    return@put
-                }
-                val req = call.receive<UpdateProductRequest>()
-                val updated =
-                    existing.copy(
-                        name = req.name ?: existing.name,
-                        description = req.description ?: existing.description,
-                        priceCents = req.priceCents ?: existing.priceCents,
-                        inStock = req.inStock ?: existing.inStock,
-                    )
-                products[id] = updated
-                call.respond(updated)
-            }
-            delete {
-                val id = call.parameters["id"]?.toIntOrNull()
-                if (id == null) {
-                    call.respond(HttpStatusCode.BadRequest)
-                    return@delete
-                }
-                val removed = products.remove(id)
-                if (removed == null) {
-                    call.respond(HttpStatusCode.NotFound)
-                    return@delete
-                }
-                // Also remove from baskets
-                baskets.forEach { (_, map) -> map.remove(id) }
-                call.respond(HttpStatusCode.NoContent)
-            }
+            get { handleGetProduct(call, products) }
+            put { handleUpdateProduct(call, products) }
+            delete { handleDeleteProduct(call, products, baskets) }
         }
     }
 }
 
-fun Routing.productRoutes(
+suspend fun handleListProducts(
+    call: ApplicationCall,
+    products: ConcurrentHashMap<Int, Product>,
+) {
+    call.respond(products.values.toList())
+}
+
+suspend fun handleCreateProduct(
+    call: ApplicationCall,
     products: ConcurrentHashMap<Int, Product>,
     productIdSeq: AtomicInteger,
+) {
+    val req = call.receive<CreateProductRequest>()
+    if (req.name.isBlank() || req.priceCents < 0) {
+        call.respond(HttpStatusCode.BadRequest, "Wrong product data")
+        return
+    }
+    val id = productIdSeq.getAndIncrement()
+    val p =
+        Product(
+            id = id,
+            name = req.name,
+            description = req.description ?: "",
+            priceCents = req.priceCents,
+            inStock = req.inStock,
+        )
+    products[id] = p
+    call.respond(HttpStatusCode.Created, p)
+}
+
+suspend fun handleGetProduct(
+    call: ApplicationCall,
+    products: ConcurrentHashMap<Int, Product>,
+) {
+    val id = call.parameters["id"]?.toIntOrNull()
+    if (id == null) {
+        call.respond(HttpStatusCode.BadRequest)
+        return
+    }
+    val p = products[id]
+    if (p == null) {
+        call.respond(HttpStatusCode.NotFound)
+        return
+    }
+    call.respond(p)
+}
+
+suspend fun handleUpdateProduct(
+    call: ApplicationCall,
+    products: ConcurrentHashMap<Int, Product>,
+) {
+    val id = call.parameters["id"]?.toIntOrNull()
+    if (id == null) {
+        call.respond(HttpStatusCode.BadRequest)
+        return
+    }
+    val existing = products[id]
+    if (existing == null) {
+        call.respond(HttpStatusCode.NotFound)
+        return
+    }
+    val req = call.receive<UpdateProductRequest>()
+    val updated =
+        existing.copy(
+            name = req.name ?: existing.name,
+            description = req.description ?: existing.description,
+            priceCents = req.priceCents ?: existing.priceCents,
+            inStock = req.inStock ?: existing.inStock,
+        )
+    products[id] = updated
+    call.respond(updated)
+}
+
+suspend fun handleDeleteProduct(
+    call: ApplicationCall,
+    products: ConcurrentHashMap<Int, Product>,
     baskets: ConcurrentHashMap<Int, ConcurrentHashMap<Int, Int>>,
 ) {
-    // Users
+    val id = call.parameters["id"]?.toIntOrNull()
+    if (id == null) {
+        call.respond(HttpStatusCode.BadRequest)
+        return
+    }
+    val removed = products.remove(id)
+    if (removed == null) {
+        call.respond(HttpStatusCode.NotFound)
+        return
+    }
+    baskets.forEach { (_, map) -> map.remove(id) }
+    call.respond(HttpStatusCode.NoContent)
+}
+
+fun Routing.userRoutes(
+    users: ConcurrentHashMap<Int, User>,
+    userIdSeq: AtomicInteger,
+    baskets: ConcurrentHashMap<Int, ConcurrentHashMap<Int, Int>>,
+) {
     route("/users") {
-        post {
-            val req = call.receive<CreateUserRequest>()
-            if (req.name.isBlank() || req.email.isBlank()) {
-                call.respond(HttpStatusCode.BadRequest, "Wrong user data")
-                return@post
-            }
-            val id = userIdSeq.getAndIncrement()
-            val u = User(id = id, name = req.name, email = req.email)
-            users[id] = u
-            baskets[id] = ConcurrentHashMap()
-            call.respond(HttpStatusCode.Created, u)
-        }
-        get {
-            call.respond(users.values.toList())
-        }
+        post { handleCreateUser(call, users, userIdSeq, baskets) }
+        get { handleListUsers(call, users) }
+
         route("/{id}") {
-            get {
-                val id = call.parameters["id"]?.toIntOrNull()
-                val u = id?.let { users[it] }
-                if (u == null) {
-                    call.respond(HttpStatusCode.NotFound)
-                    return@get
-                }
-                call.respond(u)
-            }
-            delete {
-                val id = call.parameters["id"]?.toIntOrNull()
-                if (id == null) {
-                    call.respond(HttpStatusCode.BadRequest)
-                    return@delete
-                }
-                val removed = users.remove(id)
-                baskets.remove(id)
-                if (removed == null) {
-                    call.respond(HttpStatusCode.NotFound)
-                    return@delete
-                }
-                call.respond(HttpStatusCode.NoContent)
-            }
+            get { handleGetUserById(call, users) }
+            delete { handleDeleteUserById(call, users, baskets) }
         }
     }
+}
+
+suspend fun handleCreateUser(
+    call: ApplicationCall,
+    users: ConcurrentHashMap<Int, User>,
+    userIdSeq: AtomicInteger,
+    baskets: ConcurrentHashMap<Int, ConcurrentHashMap<Int, Int>>,
+) {
+    val req = call.receive<CreateUserRequest>()
+    if (req.name.isBlank() || req.email.isBlank()) {
+        call.respond(HttpStatusCode.BadRequest, "Wrong user data")
+        return
+    }
+    val id = userIdSeq.getAndIncrement()
+    val u = User(id = id, name = req.name, email = req.email)
+    users[id] = u
+    baskets[id] = ConcurrentHashMap()
+    call.respond(HttpStatusCode.Created, u)
+}
+
+suspend fun handleListUsers(
+    call: ApplicationCall,
+    users: ConcurrentHashMap<Int, User>,
+) {
+    call.respond(users.values.toList())
+}
+
+suspend fun handleGetUserById(
+    call: ApplicationCall,
+    users: ConcurrentHashMap<Int, User>,
+) {
+    val id = call.parameters["id"]?.toIntOrNull()
+    val u = id?.let { users[it] }
+    if (u == null) {
+        call.respond(HttpStatusCode.NotFound)
+        return
+    }
+    call.respond(u)
+}
+
+suspend fun handleDeleteUserById(
+    call: ApplicationCall,
+    users: ConcurrentHashMap<Int, User>,
+    baskets: ConcurrentHashMap<Int, ConcurrentHashMap<Int, Int>>,
+) {
+    val id = call.parameters["id"]?.toIntOrNull()
+    if (id == null) {
+        call.respond(HttpStatusCode.BadRequest)
+        return
+    }
+    val removed = users.remove(id)
+    baskets.remove(id)
+    if (removed == null) {
+        call.respond(HttpStatusCode.NotFound)
+        return
+    }
+    call.respond(HttpStatusCode.NoContent)
 }
 
 fun Routing.basketRoutes(
     products: ConcurrentHashMap<Int, Product>,
-    productIdSeq: AtomicInteger,
+    users: ConcurrentHashMap<Int, User>,
     baskets: ConcurrentHashMap<Int, ConcurrentHashMap<Int, Int>>,
 ) {
-    // Basket endpoints
     route("/users/{userId}/basket") {
-        get {
-            val userId = call.parameters["userId"]?.toIntOrNull()
-            if (userId == null || users[userId] == null) {
-                call.respond(HttpStatusCode.NotFound, userNotFoundMessage)
-                return@get
-            }
-            val map = baskets[userId] ?: ConcurrentHashMap()
-            val items =
-                map.entries.mapNotNull { (productId, qty) ->
-                    products[productId]?.let { _ ->
-                        BasketItem(productId, qty)
-                    }
-                }
-            call.respond(items)
+        get { handleGetBasket(call, products, users, baskets) }
+        post { handleAddToBasket(call, products, users, baskets) }
+        delete { handleRemoveFromBasket(call, users, baskets) }
+        post("/checkout") { handleCheckout(call, products, users, baskets) }
+    }
+}
+
+suspend fun handleGetBasket(
+    call: ApplicationCall,
+    products: ConcurrentHashMap<Int, Product>,
+    users: ConcurrentHashMap<Int, User>,
+    baskets: ConcurrentHashMap<Int, ConcurrentHashMap<Int, Int>>,
+) {
+    val userId = call.parameters["userId"]?.toIntOrNull()
+    if (userId == null || users[userId] == null) {
+        call.respond(HttpStatusCode.NotFound, userNotFoundMessage)
+        return
+    }
+    val map = baskets[userId] ?: ConcurrentHashMap()
+    val items =
+        map.entries.mapNotNull { (productId, qty) ->
+            products[productId]?.let { BasketItem(productId, qty) }
         }
+    call.respond(items)
+}
 
-        post {
-            // Adds quantity, not idempotent
-            val userId = call.parameters["userId"]?.toIntOrNull()
-            if (userId == null || users[userId] == null) {
-                call.respond(HttpStatusCode.NotFound, userNotFoundMessage)
-                return@post
-            }
-            val item = call.receive<BasketItem>()
-            val product = products[item.productId]
-            if (product == null) {
-                call.respond(HttpStatusCode.BadRequest, "Product not found")
-                return@post
-            }
-            if (item.quantity <= 0) {
-                call.respond(HttpStatusCode.BadRequest, "Quantity must be > 0")
-                return@post
-            }
-            if (product.inStock < item.quantity) {
-                call.respond(HttpStatusCode.BadRequest, "Not enough stock")
-                return@post
-            }
-            val userBasket = baskets.computeIfAbsent(userId) { ConcurrentHashMap() }
-            userBasket.merge(item.productId, item.quantity) { a, b -> a + b }
-            call.respond(HttpStatusCode.OK, userBasket.entries.map { BasketItem(it.key, it.value) })
-        }
+suspend fun handleAddToBasket(
+    call: ApplicationCall,
+    products: ConcurrentHashMap<Int, Product>,
+    users: ConcurrentHashMap<Int, User>,
+    baskets: ConcurrentHashMap<Int, ConcurrentHashMap<Int, Int>>,
+) {
+    val userId = call.parameters["userId"]?.toIntOrNull()
+    if (userId == null || users[userId] == null) {
+        call.respond(HttpStatusCode.NotFound, userNotFoundMessage)
+        return
+    }
+    val item = call.receive<BasketItem>()
+    val product = products[item.productId]
+    if (product == null) {
+        call.respond(HttpStatusCode.BadRequest, "Product not found")
+        return
+    }
+    if (item.quantity <= 0) {
+        call.respond(HttpStatusCode.BadRequest, "Quantity must be > 0")
+        return
+    }
+    if (product.inStock < item.quantity) {
+        call.respond(HttpStatusCode.BadRequest, "Not enough stock")
+        return
+    }
+    val userBasket = baskets.computeIfAbsent(userId) { ConcurrentHashMap() }
+    userBasket.merge(item.productId, item.quantity) { a, b -> a + b }
+    call.respond(HttpStatusCode.OK, userBasket.entries.map { BasketItem(it.key, it.value) })
+}
 
-        delete {
-            val userId = call.parameters["userId"]?.toIntOrNull()
-            if (userId == null || users[userId] == null) {
-                call.respond(HttpStatusCode.NotFound, userNotFoundMessage)
-                return@delete
-            }
-            val item = call.receive<BasketItem>()
-            if (item.quantity <= 0) {
-                call.respond(HttpStatusCode.BadRequest, "Quantity must be > 0")
-                return@delete
-            }
-            val userBasket = baskets[userId] ?: ConcurrentHashMap()
+suspend fun handleRemoveFromBasket(
+    call: ApplicationCall,
+    users: ConcurrentHashMap<Int, User>,
+    baskets: ConcurrentHashMap<Int, ConcurrentHashMap<Int, Int>>,
+) {
+    val userId = call.parameters["userId"]?.toIntOrNull()
+    if (userId == null || users[userId] == null) {
+        call.respond(HttpStatusCode.NotFound, userNotFoundMessage)
+        return
+    }
+    val item = call.receive<BasketItem>()
+    if (item.quantity <= 0) {
+        call.respond(HttpStatusCode.BadRequest, "Quantity must be > 0")
+        return
+    }
+    val userBasket = baskets[userId] ?: ConcurrentHashMap()
+    val currentQty = userBasket[item.productId]
+    if (currentQty == null) {
+        call.respond(HttpStatusCode.NotFound, "Item not in basket")
+        return
+    }
 
-            val currentQty = userBasket[item.productId]
-            if (currentQty == null) {
-                call.respond(HttpStatusCode.NotFound, "Item not in basket")
-                return@delete
-            }
+    val newQty = currentQty - item.quantity
+    if (newQty > 0) {
+        userBasket[item.productId] = newQty
+        call.respond(HttpStatusCode.OK, BasketItem(item.productId, newQty))
+    } else {
+        userBasket.remove(item.productId)
+        call.respond(HttpStatusCode.NoContent)
+    }
+}
 
-            val newQty = currentQty - item.quantity
-            when {
-                newQty > 0 -> {
-                    userBasket[item.productId] = newQty
-                    call.respond(HttpStatusCode.OK, BasketItem(item.productId, newQty))
-                }
-                newQty <= 0 -> {
-                    userBasket.remove(item.productId)
-                    call.respond(HttpStatusCode.NoContent)
-                }
-            }
-        }
+suspend fun handleCheckout(
+    call: ApplicationCall,
+    products: ConcurrentHashMap<Int, Product>,
+    users: ConcurrentHashMap<Int, User>,
+    baskets: ConcurrentHashMap<Int, ConcurrentHashMap<Int, Int>>,
+) {
+    val userId = call.parameters["userId"]?.toIntOrNull()
+    if (userId == null || users[userId] == null) {
+        call.respond(HttpStatusCode.NotFound, userNotFoundMessage)
+        return
+    }
+    call.receive<PaymentRequest>()
 
-        post("/checkout") {
-            val userId = call.parameters["userId"]?.toIntOrNull()
-            if (userId == null || users[userId] == null) {
-                call.respond(HttpStatusCode.NotFound, userNotFoundMessage)
-                return@post
-            }
-            call.receive<PaymentRequest>()
-            // Compute total
-            val userBasket = baskets[userId] ?: ConcurrentHashMap()
-            if (userBasket.isEmpty()) {
-                call.respond(HttpStatusCode.BadRequest, PaymentResponse(false, "Basket empty", 0))
-                return@post
-            }
-            var total = 0
-            val insufficient = mutableListOf<Int>()
-            userBasket.forEach { (productId, qty) ->
-                val p = products[productId]
-                if (p == null || p.inStock < qty) {
-                    insufficient.add(productId)
-                } else {
-                    total += p.priceCents * qty
-                }
-            }
-            if (insufficient.isNotEmpty()) {
-                call.respond(
-                    HttpStatusCode.BadRequest,
-                    PaymentResponse(false, "Insufficient stock for products: $insufficient", total),
-                )
-                return@post
-            }
-            // Always succeed the payment, it is mocked, just decrease stock amount of items
-            userBasket.forEach { (productId, qty) ->
-                products.computeIfPresent(productId) { _, old ->
-                    old.copy(inStock = old.inStock - qty)
-                }
-            }
-            // Clear basket
-            baskets[userId]?.clear()
-            call.respond(HttpStatusCode.OK, PaymentResponse(true, "Mock-payment processed", total))
+    val userBasket = baskets[userId] ?: ConcurrentHashMap()
+    if (userBasket.isEmpty()) {
+        call.respond(HttpStatusCode.BadRequest, PaymentResponse(false, "Basket empty", 0))
+        return
+    }
+
+    var total = 0
+    val insufficient = mutableListOf<Int>()
+    userBasket.forEach { (productId, qty) ->
+        val p = products[productId]
+        if (p == null || p.inStock < qty) {
+            insufficient.add(productId)
+        } else {
+            total += p.priceCents * qty
         }
     }
+
+    if (insufficient.isNotEmpty()) {
+        call.respond(
+            HttpStatusCode.BadRequest,
+            PaymentResponse(false, "Insufficient stock for products: $insufficient", total),
+        )
+        return
+    }
+
+    // Always succeed the payment, it is mocked, just decrease stock amount of items
+    userBasket.forEach { (productId, qty) ->
+        products.computeIfPresent(productId) { _, old ->
+            old.copy(inStock = old.inStock - qty)
+        }
+    }
+    // Clear basket
+    baskets[userId]?.clear()
+    call.respond(HttpStatusCode.OK, PaymentResponse(true, "Mock-payment processed", total))
 }
