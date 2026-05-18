@@ -1,14 +1,21 @@
 package com.example
 
-import io.ktor.server.application.*
-import io.ktor.server.plugins.contentnegotiation.*
-import io.ktor.serialization.kotlinx.json.*
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpMethod
+import io.ktor.serialization.kotlinx.json.json
+import io.ktor.server.application.Application
+import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.server.plugins.cors.routing.CORS
+import io.ktor.server.plugins.cors.routing.allowCredentials
+import io.ktor.server.plugins.cors.routing.allowHeader
+import io.ktor.server.plugins.cors.routing.allowHost
+import io.ktor.server.plugins.cors.routing.allowMethod
+import io.ktor.server.plugins.cors.routing.maxAgeInSeconds
 import kotlinx.serialization.json.Json
-import io.ktor.server.plugins.cors.routing.*
-import io.ktor.http.*
 
 fun main(args: Array<String>) {
-    io.ktor.server.netty.EngineMain.main(args)
+    io.ktor.server.netty.EngineMain
+        .main(args)
 }
 
 fun Application.module() {
@@ -18,7 +25,7 @@ fun Application.module() {
                 ignoreUnknownKeys = true
                 isLenient = true
                 encodeDefaults = true
-            }
+            },
         )
     }
     install(CORS) {
