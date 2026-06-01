@@ -34,8 +34,13 @@ dependencies {
 
 jib {
     to {
-        image = "localhost/shop-backend"
-        tags = setOf("latest")
+        image = "wojcho/shop-backend"
+        tags = setOf("latest", version.toString())
+
+        auth {
+            username = System.getenv("DOCKERHUB_USERNAME")
+            password = System.getenv("DOCKERHUB_TOKEN")
+        }
     }
 }
 
@@ -48,4 +53,10 @@ sonar {
 
 dependencyLocking {
     lockAllConfigurations()
+}
+
+ktor {
+    docker {
+        jreVersion.set(JavaVersion.VERSION_25)
+    }
 }
